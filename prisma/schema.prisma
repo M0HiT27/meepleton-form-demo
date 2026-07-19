@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionStatus {
+  SUCCESS
+  FAILED
+  PENDING
+  REFUNDED
+}
+
+model Game {
+  id                        Int    @id @default(autoincrement())
+  name                      String @unique
+  genre                     String // Added the genre field as a String
+  required_players          Int
+  max_slots                 Int
+  current_booked_slots      Int    @default(0)
+  estimated_runtime_minutes Int
+
+  // Relations
+  passes               GameToPassMapping[]
+  playerPassSelections PlayerPassSelectedGameMapping[]
+
+  @@map("games")
+}
+
+model Pass {
+  id                       Int    @id @default(autoincrement())
+  name                     String @unique
+  description              String @db.Text
+  required_selection_count Int // Renamed: Player must choose exactly this many games from the pool
+  price                    Int // Standard whole numbers as per your rule
+
+  pass_offer_id Int?
+  pass_offer    PassOffer? @relation(fields: [pass_offer_id], references: [id], onDelete: SetNull)
+
+  games     GameToPassMapping[]
+  purchases PlayerPassPurchase[]
+
+  @@map("passes")
+}
+
+model PassOffer {
+  id               Int      @id @default(autoincrement())
+  name             String
+  discount_percent Int // Whole number percentage (e.g., 20 for 20%)
+  is_active        Boolean  @default(true)
+  start_time       DateTime
+  end_time         DateTime
+
+  passes Pass[]
+
+  @@map("pass_offers")
+}
+
+// Explicit many-to-many join table for Games and Passes
+model GameToPassMapping {
+  id      Int @id @default(autoincrement())
+  game_id Int
+  pass_id Int
+
+  // Relations
+  game Game @relation(fields: [game_id], references: [id], onDelete: Cascade)
+  pass Pass @relation(fields: [pass_id], references: [id], onDelete: Cascade)
+
+  @@unique([game_id, pass_id]) // Prevents mapping the same game to the same pass twice
+  @@map("game_to_pass_mappings")
+}
+
+model Player {
+  id     Int    @id @default(autoincrement())
+  email  String @unique
+  mobile String @unique
+
+  // Relations
+  purchases PlayerPassPurchase[]
+
+  @@map("players")
+}
+
+model Transaction {
+  id               Int               @id @default(autoincrement())
+  transaction_id   String            @unique
+  status           TransactionStatus
+  transaction_time DateTime          @default(now())
+
+  // Relations
+  purchases PlayerPassPurchase[]
+
+  @@map("transactions")
+}
+
+model PlayerPassPurchase {
+  id             Int      @id @default(autoincrement())
+  player_id      Int
+  pass_id        Int
+  purchase_time  DateTime @default(now())
+  transaction_id Int
+
+  // Relations
+  player      Player      @relation(fields: [player_id], references: [id])
+  pass        Pass        @relation(fields: [pass_id], references: [id])
+  transaction Transaction @relation(fields: [transaction_id], references: [id])
+
+  selected_games PlayerPassSelectedGameMapping[]
+
+  @@map("player_pass_purchases")
+}
+
+model PlayerPassSelectedGameMapping {
+  id                      Int @id @default(autoincrement())
+  player_pass_purchase_id Int
+  game_id                 Int
+
+  // Relations
+  purchase PlayerPassPurchase @relation(fields: [player_pass_purchase_id], references: [id], onDelete: Cascade)
+  game     Game               @relation(fields: [game_id], references: [id])
+
+  @@unique([player_pass_purchase_id, game_id]) // A player can't pick the same game twice for the same pass purchase
+  @@map("player_pass_selected_game_mappings")
+}
