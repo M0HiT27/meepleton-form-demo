@@ -248,8 +248,16 @@ function PassesForm() {
               </p>
             </motion.div>
           ) : (
-            <form onSubmit={handleSubmit} className="p-6 sm:p-10 space-y-10">
+            <form
+              onSubmit={handleSubmit}
+              className="relative p-6 sm:p-10 space-y-10"
+            >
               {/* Pass Selection */}
+              {isRevalidatingPass && (
+                <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px] flex items-center justify-center rounded-2xl z-10">
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                </div>
+              )}
               <section className="space-y-4">
                 <label
                   htmlFor="pass"
@@ -310,7 +318,7 @@ function PassesForm() {
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="rounded-2xl bg-slate-50 p-6 border border-slate-200/60"
+                      className="relative rounded-2xl bg-slate-50 p-6 border border-slate-200/60"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                         <div className="space-y-2">
