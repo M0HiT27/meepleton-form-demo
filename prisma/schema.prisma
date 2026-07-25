@@ -8,23 +8,53 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+// Status of the payment attempt itself (gateway-facing).
 enum TransactionStatus {
+  PENDING // created, sent to gateway, awaiting confirmation
   SUCCESS
   FAILED
-  PENDING
   REFUNDED
 }
 
+// Status of the purchase (business-outcome-facing).
+// Kept separate from TransactionStatus because a purchase can be
+// cancelled/expired for reasons that aren't strictly a payment failure,
+// and because querying "is this purchase active" should not require
+// joining through Transaction every time.
+enum PurchaseStatus {
+  PENDING // slot(s) reserved, payment in flight
+  CONFIRMED // payment succeeded, purchase is final
+  FAILED // payment failed / timed out — slots released
+  CANCELLED // manually cancelled (e.g. by admin) — slots released
+  REFUNDED // payment refunded — slot auto-released, same as FAILED/CANCELLED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catalog
+// ─────────────────────────────────────────────────────────────
+
 model Game {
-  id                        Int    @id @default(autoincrement())
-  name                      String @unique
-  genre                     String // Added the genre field as a String
+  id                        Int      @id @default(autoincrement())
+  name                      String   @unique
+  genre                     String
   required_players          Int
   max_slots                 Int
-  current_booked_slots      Int    @default(0)
+  // NOTE: this counter must only ever be mutated via atomic conditional
+  // SQL (UPDATE ... WHERE current_booked_slots < max_slots), never via
+  // read-then-write in application code — see booking flow docs.
+  // A CHECK constraint (current_booked_slots <= max_slots) should also
+  // be added via raw migration as a DB-level backstop; Prisma schema
+  // cannot express CHECK constraints natively.
+  current_booked_slots      Int      @default(0)
   estimated_runtime_minutes Int
+  description               String   @db.Text
+  created_at                DateTime @default(now())
+  updated_at                DateTime @default(now()) @updatedAt
 
-  // Relations
   passes               GameToPassMapping[]
   playerPassSelections PlayerPassSelectedGameMapping[]
 
@@ -32,11 +62,15 @@ model Game {
 }
 
 model Pass {
-  id                       Int    @id @default(autoincrement())
-  name                     String @unique
-  description              String @db.Text
-  required_selection_count Int // Renamed: Player must choose exactly this many games from the pool
-  price                    Int // Standard whole numbers as per your rule
+  id                       Int      @id @default(autoincrement())
+  name                     String   @unique
+  description              String   @db.Text
+  required_selection_count Int // player must choose exactly this many games from the pool
+  price                    Int // stored as smallest whole unit deliberately, no decimals
+  start_time               DateTime
+  end_time                 DateTime
+  created_at               DateTime @default(now())
+  updated_at               DateTime @default(now()) @updatedAt
 
   pass_offer_id Int?
   pass_offer    PassOffer? @relation(fields: [pass_offer_id], references: [id], onDelete: SetNull)
@@ -44,16 +78,19 @@ model Pass {
   games     GameToPassMapping[]
   purchases PlayerPassPurchase[]
 
+  @@index([pass_offer_id])
   @@map("passes")
 }
 
 model PassOffer {
   id               Int      @id @default(autoincrement())
   name             String
-  discount_percent Int // Whole number percentage (e.g., 20 for 20%)
+  discount_percent Int // whole number percentage, rounded — e.g. 20 for 20%
   is_active        Boolean  @default(true)
   start_time       DateTime
   end_time         DateTime
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now()) @updatedAt
 
   passes Pass[]
 
@@ -66,51 +103,105 @@ model GameToPassMapping {
   game_id Int
   pass_id Int
 
-  // Relations
   game Game @relation(fields: [game_id], references: [id], onDelete: Cascade)
   pass Pass @relation(fields: [pass_id], references: [id], onDelete: Cascade)
 
-  @@unique([game_id, pass_id]) // Prevents mapping the same game to the same pass twice
+  @@unique([game_id, pass_id]) // prevents mapping the same game to the same pass twice
+  @@index([pass_id])
   @@map("game_to_pass_mappings")
 }
 
-model Player {
-  id     Int    @id @default(autoincrement())
-  email  String @unique
-  mobile String @unique
-
-  // Relations
-  purchases PlayerPassPurchase[]
-
-  @@map("players")
-}
+// ─────────────────────────────────────────────────────────────
+// Payments
+// ─────────────────────────────────────────────────────────────
 
 model Transaction {
-  id               Int               @id @default(autoincrement())
-  transaction_id   String            @unique
-  status           TransactionStatus
-  transaction_time DateTime          @default(now())
+  id Int @id @default(autoincrement())
 
-  // Relations
-  purchases PlayerPassPurchase[]
+  // The gateway's own ORDER identifier. With Paytm you can hand the
+  // gateway your own reference and it echoes it back, so `id` alone was
+  // enough — but Razorpay generates its own order id server-side when you
+  // call their Create Order API, so if you're on Razorpay you need to
+  // store what THEY returned here right after creating the order (before
+  // payment starts), so the sweep job can look the order back up later.
+  gateway_order_id String? @unique
+
+  // The PAYMENT GATEWAY's own transaction/payment id (e.g. Paytm TXNID,
+  // Razorpay payment id). This does NOT exist until the gateway processes
+  // the payment, so it must be nullable and is filled in only when the
+  // webhook/callback arrives. `id` (our own PK) is what gets sent to the
+  // gateway as ORDER_ID up front (Paytm), or is tracked alongside
+  // gateway_order_id (Razorpay), since it's the only thing that exists
+  // before payment starts.
+  transaction_id String? @unique
+
+  status           TransactionStatus @default(PENDING)
+  transaction_time DateTime          @default(now())
+  // Nullable: not known until the gateway tells us. The frontend can't
+  // supply this at reservation time — with Razorpay, the user picks their
+  // payment method inside the Checkout.js widget AFTER the order already
+  // exists, so this is only ever set when resolving to SUCCESS, from the
+  // webhook payload's payment.method field (e.g. "upi", "card", "netbanking").
+  payment_method   String?
+
+  // Strict 1:1 with PlayerPassPurchase — one payment attempt maps to
+  // exactly one purchase. (Not an array: a Transaction never covers
+  // multiple purchases in this app.)
+  purchase   PlayerPassPurchase?
+  created_at DateTime            @default(now())
+  updated_at DateTime            @default(now()) @updatedAt
 
   @@map("transactions")
 }
 
 model PlayerPassPurchase {
-  id             Int      @id @default(autoincrement())
-  player_id      Int
+  id             Int            @id @default(autoincrement())
   pass_id        Int
-  purchase_time  DateTime @default(now())
-  transaction_id Int
+  purchase_time  DateTime       @default(now())
+  transaction_id Int            @unique // enforces the 1:1 with Transaction at the DB level
+  status         PurchaseStatus @default(PENDING)
+  created_at     DateTime       @default(now())
+  updated_at     DateTime       @default(now()) @updatedAt
 
-  // Relations
-  player      Player      @relation(fields: [player_id], references: [id])
-  pass        Pass        @relation(fields: [pass_id], references: [id])
-  transaction Transaction @relation(fields: [transaction_id], references: [id])
+  // Buyer/attendee contact info, snapshotted per purchase rather than
+  // pulled from a shared Player account. There is deliberately no
+  // global-unique Player entity here: a buyer may purchase on behalf
+  // of a friend (their own phone number, the friend's email, etc.),
+  // which would violate a global-unique email/mobile constraint if
+  // this info lived on a reusable account row instead. If account-level
+  // features (login, purchase history, loyalty) are needed later, these
+  // fields can be grouped/backfilled into a proper Player entity then.
+  name    String
+  email   String
+  mobile  String
+  city    String
+  pincode String
+  address String
+
+  // onDelete explicitly set to Restrict (Postgres' default behavior
+  // anyway) so it's a documented decision, not an accident: a Pass or
+  // Transaction with purchases against it can never be deleted out from
+  // under them.
+  pass        Pass        @relation(fields: [pass_id], references: [id], onDelete: Restrict)
+  transaction Transaction @relation(fields: [transaction_id], references: [id], onDelete: Restrict)
 
   selected_games PlayerPassSelectedGameMapping[]
 
+  @@index([pass_id])
+  @@index([email])
+  @@index([mobile])
+  // Enforces "one purchase in flight at a time per buyer" at the DB
+  // level. Since there's no Player id to key off anymore, this keys off
+  // the (email, mobile) pair instead. Partial unique indexes can't be
+  // expressed in Prisma schema syntax, so add this manually in a
+  // migration.sql after `prisma migrate dev`:
+  //
+  //   CREATE UNIQUE INDEX one_pending_purchase_per_buyer
+  //     ON player_pass_purchases (email, mobile)
+  //     WHERE status = 'PENDING';
+  //
+  // Once a purchase resolves to CONFIRMED / FAILED / CANCELLED / REFUNDED,
+  // the same buyer is free to start a new one (same or different pass).
   @@map("player_pass_purchases")
 }
 
@@ -119,10 +210,10 @@ model PlayerPassSelectedGameMapping {
   player_pass_purchase_id Int
   game_id                 Int
 
-  // Relations
   purchase PlayerPassPurchase @relation(fields: [player_pass_purchase_id], references: [id], onDelete: Cascade)
   game     Game               @relation(fields: [game_id], references: [id])
 
-  @@unique([player_pass_purchase_id, game_id]) // A player can't pick the same game twice for the same pass purchase
+  @@unique([player_pass_purchase_id, game_id]) // a player can't pick the same game twice for the same purchase
+  @@index([game_id])
   @@map("player_pass_selected_game_mappings")
 }

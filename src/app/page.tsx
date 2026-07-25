@@ -7,6 +7,7 @@ import {
   User,
   Mail,
   Phone,
+  MapPin,
   ChevronDown,
   CheckCircle2,
   Loader2,
@@ -15,12 +16,16 @@ import { passService, ClientPass } from "@/api/client/services/pass.service"; //
 import { CountdownTimer } from "@/ui/components/countdown";
 import { GameList } from "@/ui/components/gamelist";
 import { ToastProvider, useToast } from "@/ui/components/toast";
+import Script from "next/script";
 
 // Not part of passService — keep/replace with your real country code list.
 const COUNTRY_CODES = [
   { code: "+91", label: "India" },
   { code: "+1", label: "US/Canada" },
   { code: "+44", label: "UK" },
+  { code: "+61", label: "Australia" },
+  { code: "+971", label: "UAE" },
+  { code: "+65", label: "Singapore" },
 ];
 
 export default function PassesPage() {
@@ -30,7 +35,11 @@ export default function PassesPage() {
     </ToastProvider>
   );
 }
-
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 function PassesForm() {
   const { showToast } = useToast();
 
@@ -54,6 +63,9 @@ function PassesForm() {
   const [email, setEmail] = useState("");
   const [countryCode, setCountryCode] = useState("+91");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [pincode, setPincode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
@@ -133,8 +145,10 @@ function PassesForm() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSubmitting) return;
 
     if (!selectedPass) {
       showToast("Please select a game pass first.", "error");
@@ -159,44 +173,124 @@ function PassesForm() {
       return;
     }
 
-    if (!phoneNumber.trim() || phoneNumber.length < 5) {
-      showToast("Please enter a valid phone number.", "error");
+    if (!phoneNumber.trim() || !/^\d{7,15}$/.test(phoneNumber.trim())) {
+      showToast("Please enter a valid mobile number.", "error");
+      return;
+    }
+
+    if (!address.trim() || address.trim().length < 5) {
+      showToast("Please enter a valid address.", "error");
+      return;
+    }
+
+    if (!city.trim()) {
+      showToast("Please enter your city.", "error");
+      return;
+    }
+
+    if (!pincode.trim() || pincode.trim().length < 3) {
+      showToast("Please enter a valid pincode / postal code.", "error");
+      return;
+    }
+
+    if (!window.Razorpay) {
+      showToast(
+        "Payment gateway is still loading. Try again in a moment.",
+        "error",
+      );
       return;
     }
 
     setIsSubmitting(true);
 
-    // TODO: replace with a real registration API call (e.g. a registrationService.submit(...))
     const fullPhoneNumber = `${countryCode}${phoneNumber}`;
-    const payload = {
-      passId: selectedPass.id,
-      gameIds: selectedGameIds,
-      user: {
-        name,
-        email,
-        phone: fullPhoneNumber,
-      },
-    };
 
-    setTimeout(() => {
-      console.log("Submitted Payload:", payload);
-      setIsSubmitting(false);
-      setIsSuccess(true);
-      showToast("Successfully registered for the Game Pass!", "success");
+    // Note: this only clears isSubmitting — it does NOT set isSuccess or
+    // reset the form. Only a confirmed payment should do that, further down.
+    let purchaseInitiated = false;
 
-      setTimeout(() => {
-        setIsSuccess(false);
-        setSelectedPassId("");
-        setSelectedGameIds([]);
-        setName("");
-        setEmail("");
-        setPhoneNumber("");
-      }, 3000);
-    }, 1500);
+    try {
+      const result = await passService.purchaseAPass({
+        pass_id: selectedPass.id,
+        selected_game_ids: selectedGameIds.map(Number),
+        buyer: {
+          name: name.trim(),
+          email: email.trim(),
+          mobile: fullPhoneNumber,
+          city: city.trim(),
+          pincode: pincode.trim(),
+          address: address.trim(),
+        },
+      });
+
+      purchaseInitiated = true;
+
+      const rzp = new window.Razorpay({
+        key: result.keyId,
+        order_id: result.razorpayOrderId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "Game Pass Registration",
+        description: selectedPass.name,
+        prefill: {
+          name: name.trim(),
+          email: email.trim(),
+          contact: fullPhoneNumber,
+        },
+        handler: () => {
+          // TODO: verify payment server-side (signature check against
+          // result.transactionId) before trusting this as truly paid —
+          // Razorpay's client callback alone isn't proof of payment.
+          setIsSubmitting(false);
+          setIsSuccess(true);
+          showToast("Payment successful! You're registered.", "success");
+
+          setTimeout(() => {
+            setIsSuccess(false);
+            setSelectedPassId("");
+            setSelectedGameIds([]);
+            setName("");
+            setEmail("");
+            setPhoneNumber("");
+            setAddress("");
+            setCity("");
+            setPincode("");
+          }, 3000);
+        },
+        modal: {
+          ondismiss: () => {
+            setIsSubmitting(false);
+            showToast("Payment was cancelled.", "error");
+          },
+        },
+      });
+
+      rzp.on("payment.failed", () => {
+        setIsSubmitting(false);
+        showToast("Payment failed. Please try again.", "error");
+      });
+
+      rzp.open();
+    } catch (err) {
+      // Only reachable if purchaseAPass itself failed (before the modal ever
+      // opened) — if the modal already opened, its own callbacks own
+      // isSubmitting from here on.
+      if (!purchaseInitiated) {
+        showToast(
+          err instanceof Error ? err.message : "Failed to purchase pass",
+          "error",
+        );
+        setIsSubmitting(false);
+      }
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="lazyOnload"
+      />
       <div className="max-w-3xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-10">
@@ -474,9 +568,13 @@ function PassesForm() {
                               type="tel"
                               id="phone"
                               value={phoneNumber}
+                              // Allow up to 15 digits (ITU E.164 max) instead of
+                              // the previous implicit 10-digit assumption.
                               onChange={(e) =>
                                 setPhoneNumber(
-                                  e.target.value.replace(/\D/g, ""),
+                                  e.target.value
+                                    .replace(/\D/g, "")
+                                    .slice(0, 15),
                                 )
                               }
                               placeholder="9876543210"
@@ -484,6 +582,66 @@ function PassesForm() {
                             />
                           </div>
                         </div>
+                      </div>
+
+                      <div className="space-y-2 sm:col-span-2">
+                        <label
+                          htmlFor="address"
+                          className="block text-sm font-medium text-gray-700"
+                        >
+                          Address
+                        </label>
+                        <div className="relative">
+                          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <MapPin className="h-4 w-4 text-gray-400" />
+                          </div>
+                          <input
+                            type="text"
+                            id="address"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            placeholder="123 Park Street, Apartment 4B"
+                            className="block w-full rounded-xl border border-gray-300 pl-10 pr-3 py-3 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm transition-all"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="city"
+                          className="block text-sm font-medium text-gray-700"
+                        >
+                          City
+                        </label>
+                        <input
+                          type="text"
+                          id="city"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          placeholder="Bhopal"
+                          className="block w-full rounded-xl border border-gray-300 px-3 py-3 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm transition-all"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="pincode"
+                          className="block text-sm font-medium text-gray-700"
+                        >
+                          Pincode / Postal Code
+                        </label>
+                        <input
+                          type="text"
+                          id="pincode"
+                          value={pincode}
+                          onChange={(e) =>
+                            setPincode(
+                              e.target.value.replace(/[^a-zA-Z0-9 ]/g, ""),
+                            )
+                          }
+                          placeholder="462001"
+                          className="block w-full rounded-xl border border-gray-300 px-3 py-3 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm transition-all"
+                        />
                       </div>
                     </div>
                   </motion.section>

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'; // Aligned with your pooled singleton ins
 export async function getPassById(idString: string) {
   try {
     const passId = parseInt(idString, 10);
-    
+
     if (isNaN(passId)) {
       return NextResponse.json(
         { success: false, error: 'Invalid pass ID format' },
@@ -32,24 +32,22 @@ export async function getPassById(idString: string) {
       );
     }
 
-    // 1. Force the current system execution time into Asia/Kolkata timezone context
-    const nowInKolkata = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
-    );
-    
-    const offer = pass.pass_offer;
-    
-    // 2. Evaluate validity by parsing DB timestamps into the same target timezone context
-    const offerStartTime = offer ? new Date(new Date(offer.start_time).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })) : null;
-    const offerEndTime = offer ? new Date(new Date(offer.end_time).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })) : null;
+    const now = new Date();
 
-    const isOfferActive = 
-      offer && 
-      offer.is_active && 
-      offerStartTime &&
-      offerEndTime &&
-      nowInKolkata >= offerStartTime && 
-      nowInKolkata <= offerEndTime;
+    // NOTE: Date objects represent an absolute instant (epoch value), not a
+    // wall-clock time — comparing them directly is already timezone-correct.
+    // No need to round-trip through Asia/Kolkata locale strings; that was
+    // both unnecessary and unreliable (locale-string re-parsing isn't
+    // guaranteed to behave consistently across Node/browser environments).
+    const isPassActive = now >= pass.start_time && now <= pass.end_time;
+
+    const offer = pass.pass_offer;
+
+    const isOfferActive =
+      !!offer &&
+      offer.is_active &&
+      now >= offer.start_time &&
+      now <= offer.end_time;
 
     const basePrice = pass.price;
     let finalPrice = basePrice;
@@ -67,6 +65,13 @@ export async function getPassById(idString: string) {
       name: pass.name,
       description: pass.description,
       requiredSelectionCount: pass.required_selection_count,
+      // Unlike the list endpoint (which filters inactive passes out of the
+      // result set entirely), a direct by-id fetch can still be hit via a
+      // stale/shared/bookmarked link after the pass's window has closed.
+      // Surface that explicitly rather than silently serving stale pricing,
+      // and let the caller decide whether to block purchase, show a
+      // "no longer available" state, etc.
+      isActive: isPassActive,
       pricing: {
         basePrice: basePrice,
         discountedPrice: finalPrice,
@@ -75,18 +80,29 @@ export async function getPassById(idString: string) {
         savings: savings,
         // Countdown metadata fields for frontend integration
         discountName: isOfferActive && offer ? offer.name : null,
-        discountEndsAtMs: isOfferActive && offer ? new Date(offer.end_time).getTime() : null,
+        discountEndsAtMs: isOfferActive && offer ? offer.end_time.getTime() : null,
       },
       // Flatten the structural mapping array into a clean game list
-      games: pass.games.map((mapping) => ({
-        id: mapping.game.id,
-        name: mapping.game.name,
-        genre: mapping.game.genre,
-        requiredPlayers: mapping.game.required_players,
-        maxSlots: mapping.game.max_slots,
-        estimatedRuntimeMinutes: mapping.game.estimated_runtime_minutes,
-        current_booked_slots: mapping.game.current_booked_slots,
-      })),
+      games: pass.games.map((mapping) => {
+        const { max_slots, current_booked_slots } = mapping.game;
+
+        return {
+          id: mapping.game.id,
+          name: mapping.game.name,
+          genre: mapping.game.genre,
+          requiredPlayers: mapping.game.required_players,
+          maxSlots: max_slots,
+          estimatedRuntimeMinutes: mapping.game.estimated_runtime_minutes,
+          // current_booked_slots is incremented at RESERVATION time (i.e. as
+          // soon as a PlayerPassPurchase is created, status PENDING), not at
+          // payment confirmation — so it already accounts for in-flight
+          // pending payments, not just CONFIRMED ones. Do not "fix" this to
+          // exclude pending purchases; that would reopen the overbooking race
+          // the reservation flow was built to close.
+          currentBookedSlots: current_booked_slots,
+          availableSlots: Math.max(0, max_slots - current_booked_slots),
+        };
+      }),
     };
 
     return NextResponse.json({ success: true, data: formattedPass }, { status: 200 });

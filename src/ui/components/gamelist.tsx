@@ -30,7 +30,7 @@ export function GameList({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {pass.games.map((game) => {
           const isSelected = selectedGameIds.includes(String(game.id));
-          const remainingSlots = game.maxSlots - game.current_booked_slots;
+          const remainingSlots = game.availableSlots;
           const isFull = remainingSlots <= 0;
           const isDisabled = (isSelectionFull && !isSelected) || isFull;
 
