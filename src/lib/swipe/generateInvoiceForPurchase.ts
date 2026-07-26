@@ -73,7 +73,7 @@ export async function generateInvoiceForPurchase(purchase: PurchaseForInvoice): 
     passId: purchase.pass_id,
     passName: purchase.pass.name,
     listPrice: purchase.pass.price,
-    amountCharged,
+    amountCharged:amountCharged / 100,
   });
 
   const doc = await createDocument({
@@ -90,7 +90,7 @@ export async function generateInvoiceForPurchase(purchase: PurchaseForInvoice): 
     items: [item],
     payments: [
       {
-        amount: amountCharged / 100, // TODO: confirm rupees vs paise
+        amount: amountCharged / 100, 
         method: swipeMethod,
         ...(swipeMethod !== 'cash' ? { bank_details: getSettlementBankDetails() } : {}),
       },
