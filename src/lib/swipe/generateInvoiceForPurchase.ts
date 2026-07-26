@@ -83,14 +83,14 @@ export async function generateInvoiceForPurchase(purchase: PurchaseForInvoice): 
       id: swipeCustomerId,
       type: 'customer',
       name: purchase.name,
-      dial_code: dialKey,
-      phone: purchase.mobile,
+      country_code: dialKey,
+      phone_number: purchase.mobile,
       email: purchase.email,
     },
     items: [item],
     payments: [
       {
-        amount: amountCharged, // TODO: confirm rupees vs paise
+        amount: amountCharged / 100, // TODO: confirm rupees vs paise
         method: swipeMethod,
         ...(swipeMethod !== 'cash' ? { bank_details: getSettlementBankDetails() } : {}),
       },

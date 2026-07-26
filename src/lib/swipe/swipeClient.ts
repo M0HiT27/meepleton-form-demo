@@ -76,12 +76,9 @@ type SwipeParty = {
   id: string;
   type: 'customer';
   name: string;
-  // Included on every call — Swipe ignores these if `id` already matches
-  // an existing party, and uses them to create a new one if it doesn't.
-  // Verify field names (phone/dial_code/email) against Swipe's full party
-  // schema; only id/type/name are confirmed from the working example.
-  phone?: string;
-  dial_code?: string;
+  country_code?: string;
+  phone_number?: string;
+  company_name?: string;
   email?: string;
 };
 
