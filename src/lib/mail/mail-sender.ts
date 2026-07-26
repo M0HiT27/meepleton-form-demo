@@ -47,7 +47,11 @@ export default async function sendConfirmationMail(data: PurchaseForMail , invoi
       // gateway's own transaction id if present, falling back to our internal PK
       TRANSACTION_ID: data.transaction.transaction_id ?? String(data.transaction.id),
       PURCHASE_TIME: purchaseTime,
-      AMOUNT: String(data.transaction.amount || data.pass.price),
+      AMOUNT: String(
+        data.transaction?.amount != null
+          ? data.transaction.amount / 100
+          : data.pass.price
+      ),
       INVOICE_URL: invoiceUrl,
       GAMES: data.selected_games.map((sg) => ({ NAME: sg.game.name })),
     },
