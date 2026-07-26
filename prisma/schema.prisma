@@ -143,6 +143,7 @@ model Transaction {
   // exists, so this is only ever set when resolving to SUCCESS, from the
   // webhook payload's payment.method field (e.g. "upi", "card", "netbanking").
   payment_method   String?
+  amount           Int?
 
   // Strict 1:1 with PlayerPassPurchase — one payment attempt maps to
   // exactly one purchase. (Not an array: a Transaction never covers
@@ -155,14 +156,15 @@ model Transaction {
 }
 
 model PlayerPassPurchase {
-  id             Int            @id @default(autoincrement())
-  pass_id        Int
-  purchase_time  DateTime       @default(now())
-  transaction_id Int            @unique // enforces the 1:1 with Transaction at the DB level
-  status         PurchaseStatus @default(PENDING)
-  created_at     DateTime       @default(now())
-  updated_at     DateTime       @default(now()) @updatedAt
-
+  id                Int            @id @default(autoincrement())
+  pass_id           Int
+  purchase_time     DateTime       @default(now())
+  transaction_id    Int            @unique // enforces the 1:1 with Transaction at the DB level
+  status            PurchaseStatus @default(PENDING)
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @default(now()) @updatedAt
+  swipe_doc_hash_id String?
+  invoice_url       String?
   // Buyer/attendee contact info, snapshotted per purchase rather than
   // pulled from a shared Player account. There is deliberately no
   // global-unique Player entity here: a buyer may purchase on behalf
@@ -171,12 +173,13 @@ model PlayerPassPurchase {
   // this info lived on a reusable account row instead. If account-level
   // features (login, purchase history, loyalty) are needed later, these
   // fields can be grouped/backfilled into a proper Player entity then.
-  name    String
-  email   String
-  mobile  String
-  city    String
-  pincode String
-  address String
+  name              String
+  email             String
+  mobile            String
+  dial_code         String
+  city              String
+  pincode           String
+  address           String
 
   // onDelete explicitly set to Restrict (Postgres' default behavior
   // anyway) so it's a documented decision, not an accident: a Pass or
@@ -216,4 +219,19 @@ model PlayerPassSelectedGameMapping {
   @@unique([player_pass_purchase_id, game_id]) // a player can't pick the same game twice for the same purchase
   @@index([game_id])
   @@map("player_pass_selected_game_mappings")
+}
+
+model SwipeCustomerMap {
+  id Int @id @default(autoincrement())
+
+  dial_code        String // stored separately, part of the identity now
+  phone_normalized String // local number, digits only
+  name_normalized  String // trimmed, lowercased, collapsed whitespace
+  customer_id      String
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@unique([dial_code, phone_normalized, name_normalized])
+  @@map("swipe_customer_map")
 }

@@ -14,6 +14,7 @@ interface VerifyResult {
   status: 'SUCCESS' | 'FAILED' | 'STILL_PENDING';
   paymentId: string | null;
   paymentMethod: string | null;
+  amountCharged: number | null; // paise, straight from Razorpay — matches Pass.price's smallest-unit convention
 }
 
 export async function verifyRazorpayPayment(
@@ -41,11 +42,11 @@ export async function verifyRazorpayPayment(
     console.error(
       `Razorpay status check failed for order ${razorpayOrderId}: ${res.status}`
     );
-    return { status: 'STILL_PENDING', paymentId: null, paymentMethod: null };
+    return { status: 'STILL_PENDING', paymentId: null, paymentMethod: null, amountCharged: null };
   }
 
   const data = await res.json();
-  const payments: Array<{ status: string; id: string; method?: string }> =
+  const payments: Array<{ status: string; id: string; method?: string; amount?: number }> =
     data.items ?? [];
 
   const captured = payments.find((p) => p.status === 'captured');
@@ -54,6 +55,7 @@ export async function verifyRazorpayPayment(
       status: 'SUCCESS',
       paymentId: captured.id,
       paymentMethod: captured.method ?? null,
+      amountCharged: captured.amount ?? null,
     };
   }
 
@@ -66,5 +68,6 @@ export async function verifyRazorpayPayment(
     status: allFailedOrEmpty ? 'FAILED' : 'STILL_PENDING',
     paymentId: null,
     paymentMethod: null,
+    amountCharged: null,
   };
 }

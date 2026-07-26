@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import sendConfirmationMail from '@/lib/mail/mail-sender'; // adjust to actual path
+import { generateInvoiceForPurchase } from '@/lib/swipe/generateInvoiceForPurchase';
 
 type Resolution = 'SUCCESS' | 'FAILED' | 'REFUNDED';
 
@@ -30,6 +31,15 @@ const ALLOWED_FROM_STATUS: Record<Resolution, 'PENDING' | 'SUCCESS'> = {
  * @param resolution       'SUCCESS' | 'FAILED' | 'REFUNDED'
  * @param gatewayPaymentId the gateway's own payment/txn id, if known
  *                         (only meaningful on SUCCESS; omit otherwise)
+ * @param paymentMethod    e.g. "upi" | "card" | "netbanking" — only meaningful on SUCCESS
+ * @param amountCharged    the actual amount the gateway captured, in the
+ *                         same smallest-unit convention as Pass.price —
+ *                         from Razorpay webhook payload's payment.amount.
+ *                         Only meaningful on SUCCESS. Captured here (not
+ *                         derived from Pass/PassOffer later) because an
+ *                         offer can change or expire between purchase and
+ *                         invoice generation — this is the only record of
+ *                         what was truly charged for THIS transaction.
  * @returns true if this call actually changed anything, false if the
  *          transaction wasn't in the expected starting status (already
  *          resolved by another path, or resolution doesn't apply yet)
@@ -38,7 +48,8 @@ export async function resolveTransaction(
   transactionId: number,
   resolution: Resolution,
   gatewayPaymentId: string | null = null,
-  paymentMethod: string | null = null // e.g. "upi" | "card" | "netbanking" — only meaningful on SUCCESS
+  paymentMethod: string | null = null,
+  amountCharged: number | null = null
 ): Promise<boolean> {
   const changed = await prisma.$transaction(async (tx) => {
     const fromStatus = ALLOWED_FROM_STATUS[resolution];
@@ -55,6 +66,9 @@ export async function resolveTransaction(
         // Only ever set on SUCCESS — this is the first point the actual
         // method the user chose inside the checkout widget is known.
         ...(resolution === 'SUCCESS' && paymentMethod ? { payment_method: paymentMethod } : {}),
+        // Only ever set on SUCCESS — the actual captured amount, used
+        // later to compute the invoice discount (list price - this).
+        ...(resolution === 'SUCCESS' && amountCharged != null ? { amount_charged: amountCharged } : {}),
       },
     });
 
@@ -107,13 +121,14 @@ export async function resolveTransaction(
     return true;
   });
 
-  // Confirmation email is dispatched OUTSIDE the atomic block, deliberately:
-  // - it's an external network call and has no business holding the DB
-  //   transaction open (or worse, rolling back valid bookkeeping because
-  //   Brevo timed out)
-  // - a failed send shouldn't make resolveTransaction report `false` to
-  //   its callers (webhook handler, sweep cron), since the payment/purchase
-  //   state itself was still resolved correctly
+  // Invoice generation + confirmation email are dispatched OUTSIDE the
+  // atomic block, deliberately:
+  // - both are external network calls (Swipe, mail provider) and have no
+  //   business holding the DB transaction open (or worse, rolling back
+  //   valid bookkeeping because one of them timed out)
+  // - a failure in either shouldn't make resolveTransaction report `false`
+  //   to its callers (webhook handler, sweep cron), since the payment/
+  //   purchase state itself was still resolved correctly
   if (changed && resolution === 'SUCCESS') {
     try {
       const purchase = await prisma.playerPassPurchase.findUnique({
@@ -126,13 +141,30 @@ export async function resolveTransaction(
       });
 
       if (purchase) {
-        await sendConfirmationMail(purchase , "https://swipe.pe/view/SLmWJeZCZoMpN");
+        // Invoice must be generated first — the confirmation email links
+        // to whatever URL this returns, not a hardcoded placeholder.
+        const invoiceURL = await generateInvoiceForPurchase({
+          id: purchase.id,
+          pass_id: purchase.pass_id,
+          name: purchase.name,
+          email: purchase.email,
+          dial_code: purchase.dial_code,
+          mobile: purchase.mobile,
+          pass: { name: purchase.pass.name, price: purchase.pass.price },
+          transaction: {
+            payment_method: purchase.transaction.payment_method,
+            amount_charged: purchase.transaction.amount,
+          },
+        });
+
+        await sendConfirmationMail(purchase, invoiceURL);
       }
     } catch (err) {
-      // Never let a mail-provider hiccup surface as a payment-resolution
-      // failure to the caller — log and move on. Add a retry/queue here
-      // later if missed confirmation emails become a real problem.
-      console.error(`⚠️ Failed to send confirmation mail for transaction ${transactionId}:`, err);
+      // Covers both invoice generation and mail send failures — neither
+      // should surface as a payment-resolution failure to the caller.
+      // Log and move on; add a retry/queue here later if missed invoices
+      // or confirmation emails become a real problem.
+      console.error(`⚠️ Failed to generate invoice / send confirmation mail for transaction ${transactionId}:`, err);
     }
   }
 

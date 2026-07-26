@@ -203,8 +203,6 @@ function PassesForm() {
 
     setIsSubmitting(true);
 
-    const fullPhoneNumber = `${countryCode}${phoneNumber}`;
-
     // Note: this only clears isSubmitting — it does NOT set isSuccess or
     // reset the form. Only a confirmed payment should do that, further down.
     let purchaseInitiated = false;
@@ -216,7 +214,8 @@ function PassesForm() {
         buyer: {
           name: name.trim(),
           email: email.trim(),
-          mobile: fullPhoneNumber,
+          mobile: phoneNumber.trim(),
+          dial_code: countryCode.trim(),
           city: city.trim(),
           pincode: pincode.trim(),
           address: address.trim(),
@@ -235,7 +234,7 @@ function PassesForm() {
         prefill: {
           name: name.trim(),
           email: email.trim(),
-          contact: fullPhoneNumber,
+          // contact: fullPhoneNumber,
         },
         handler: () => {
           // TODO: verify payment server-side (signature check against

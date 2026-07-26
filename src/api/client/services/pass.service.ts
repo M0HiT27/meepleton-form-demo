@@ -43,6 +43,7 @@ interface PurchasePassPayload {
     name: string;
     email: string;
     mobile: string;
+    dial_code:string;
     city: string;
     pincode: string;
     address: string;

@@ -51,6 +51,7 @@ export async function POST(req: Request) {
   const razorpayOrderId: string | undefined = payment?.order_id;
   const razorpayPaymentId: string | undefined = payment?.id;
   const razorpayPaymentMethod: string | undefined = payment?.method; // "upi" | "card" | "netbanking" | "wallet" | ...
+  const razorpayAmount: number | undefined = payment?.amount; // paise — matches Pass.price's smallest-unit convention
 
   if (!razorpayOrderId) {
     console.error('Razorpay webhook: missing order_id in payload', event);
@@ -75,7 +76,10 @@ export async function POST(req: Request) {
     transaction.id,
     resolution,
     razorpayPaymentId ?? null,
-    razorpayPaymentMethod ?? null
+    razorpayPaymentMethod ?? null,
+    // Only meaningful on SUCCESS — resolveTransaction itself ignores this
+    // arg for FAILED, but no harm passing it through either way.
+    razorpayAmount ?? null
   );
 
   // Respond quickly with 200 — Razorpay retries on non-2xx, and

@@ -11,6 +11,7 @@ interface ReservationBody {
     name: string;
     email: string;
     mobile: string;
+    dial_code:string;
     city: string;
     pincode: string;
     address: string;
@@ -89,6 +90,7 @@ export async function POST(req: Request) {
           name: buyer.name,
           email: buyer.email,
           mobile: buyer.mobile,
+          dial_code:buyer.dial_code,
           city: buyer.city,
           pincode: buyer.pincode,
           address: buyer.address,

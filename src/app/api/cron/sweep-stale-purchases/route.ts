@@ -58,7 +58,8 @@ export async function GET(req: Request) {
           txn.id,
           'SUCCESS',
           result.paymentId,
-          result.paymentMethod
+          result.paymentMethod,
+          result.amountCharged
         );
         if (changed) results.resolvedSuccess++;
       } else if (result.status === 'FAILED') {
