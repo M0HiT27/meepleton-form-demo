@@ -31,6 +31,7 @@ export default async function sendConfirmationMail(data: PurchaseForMail , invoi
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Asia/Kolkata",
   });
 
   const payload = {
