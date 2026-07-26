@@ -4,46 +4,12 @@ import { generateInvoiceForPurchase } from '@/lib/swipe/generateInvoiceForPurcha
 
 type Resolution = 'SUCCESS' | 'FAILED' | 'REFUNDED';
 
-// Which Transaction.status a resolution is allowed to transition FROM.
-// SUCCESS/FAILED both resolve a PENDING payment attempt. REFUNDED is
-// different — it only ever applies to a transaction that already
-// succeeded, so its guard must check against SUCCESS, not PENDING.
 const ALLOWED_FROM_STATUS: Record<Resolution, 'PENDING' | 'SUCCESS'> = {
   SUCCESS: 'PENDING',
   FAILED: 'PENDING',
   REFUNDED: 'SUCCESS',
 };
 
-/**
- * Resolves a transaction to SUCCESS, FAILED, or REFUNDED, and does the
- * matching purchase/slot bookkeeping in one atomic DB transaction.
- *
- * This is the single source of truth for "what happens when we learn a
- * payment's outcome changed" — the payment gateway's webhook handler, the
- * sweep cron, and any admin-initiated refund flow all call this same
- * function. Whichever caller gets there first wins; the others become a
- * safe no-op via the status guard below. Do not duplicate this logic
- * elsewhere — if callers ever diverge in how they release slots, that
- * reopens the overbooking race the whole reserve/confirm/release design
- * was built to close.
- *
- * @param transactionId    our own Transaction.id
- * @param resolution       'SUCCESS' | 'FAILED' | 'REFUNDED'
- * @param gatewayPaymentId the gateway's own payment/txn id, if known
- *                         (only meaningful on SUCCESS; omit otherwise)
- * @param paymentMethod    e.g. "upi" | "card" | "netbanking" — only meaningful on SUCCESS
- * @param amountCharged    the actual amount the gateway captured, in the
- *                         same smallest-unit convention as Pass.price —
- *                         from Razorpay webhook payload's payment.amount.
- *                         Only meaningful on SUCCESS. Captured here (not
- *                         derived from Pass/PassOffer later) because an
- *                         offer can change or expire between purchase and
- *                         invoice generation — this is the only record of
- *                         what was truly charged for THIS transaction.
- * @returns true if this call actually changed anything, false if the
- *          transaction wasn't in the expected starting status (already
- *          resolved by another path, or resolution doesn't apply yet)
- */
 export async function resolveTransaction(
   transactionId: number,
   resolution: Resolution,
@@ -54,27 +20,18 @@ export async function resolveTransaction(
   const changed = await prisma.$transaction(async (tx) => {
     const fromStatus = ALLOWED_FROM_STATUS[resolution];
 
-    // Idempotency guard: only ever transition from the expected starting
-    // status. Protects against webhook retries (Razorpay/Paytm both use
-    // at-least-once delivery), against the sweep job racing a webhook that
-    // arrives mid-check, and against a refund being processed twice.
     const updated = await tx.transaction.updateMany({
       where: { id: transactionId, status: fromStatus },
       data: {
         status: resolution,
         ...(gatewayPaymentId ? { transaction_id: gatewayPaymentId } : {}),
-        // Only ever set on SUCCESS — this is the first point the actual
-        // method the user chose inside the checkout widget is known.
         ...(resolution === 'SUCCESS' && paymentMethod ? { payment_method: paymentMethod } : {}),
-        // Only ever set on SUCCESS — the actual captured amount, used
-        // later to compute the invoice discount (list price - this).
-        ...(resolution === 'SUCCESS' && amountCharged != null ? { amount_charged: amountCharged } : {}),
+        // Field is `amount` on the actual schema, not `amount_charged`.
+        ...(resolution === 'SUCCESS' && amountCharged != null ? { amount: amountCharged } : {}),
       },
     });
 
     if (updated.count === 0) {
-      // Not in the expected starting status — already resolved by another
-      // path, or this resolution doesn't apply yet. Nothing to do.
       return false;
     }
 
@@ -84,9 +41,6 @@ export async function resolveTransaction(
     });
 
     if (!purchase) {
-      // Shouldn't happen given the 1:1 constraint, but don't silently
-      // swallow it — a Transaction with no linked purchase is a data
-      // integrity problem worth surfacing.
       console.error(
         `⚠️ Transaction ${transactionId} resolved to ${resolution} but has no linked PlayerPassPurchase`
       );
@@ -98,16 +52,12 @@ export async function resolveTransaction(
         where: { id: purchase.id },
         data: { status: 'CONFIRMED' },
       });
-      // Slots stay booked — no change to current_booked_slots.
       return true;
     }
 
-    // FAILED and REFUNDED both release every slot this purchase was
-    // holding, and both map PlayerPassPurchase.status 1:1 to the same name
-    // as the Transaction resolution.
     await tx.playerPassPurchase.update({
       where: { id: purchase.id },
-      data: { status: resolution }, // 'FAILED' | 'REFUNDED'
+      data: { status: resolution },
     });
 
     for (const sel of purchase.selected_games) {
@@ -121,14 +71,6 @@ export async function resolveTransaction(
     return true;
   });
 
-  // Invoice generation + confirmation email are dispatched OUTSIDE the
-  // atomic block, deliberately:
-  // - both are external network calls (Swipe, mail provider) and have no
-  //   business holding the DB transaction open (or worse, rolling back
-  //   valid bookkeeping because one of them timed out)
-  // - a failure in either shouldn't make resolveTransaction report `false`
-  //   to its callers (webhook handler, sweep cron), since the payment/
-  //   purchase state itself was still resolved correctly
   if (changed && resolution === 'SUCCESS') {
     try {
       const purchase = await prisma.playerPassPurchase.findUnique({
@@ -141,8 +83,6 @@ export async function resolveTransaction(
       });
 
       if (purchase) {
-        // Invoice must be generated first — the confirmation email links
-        // to whatever URL this returns, not a hardcoded placeholder.
         const invoiceURL = await generateInvoiceForPurchase({
           id: purchase.id,
           pass_id: purchase.pass_id,
@@ -153,6 +93,7 @@ export async function resolveTransaction(
           pass: { name: purchase.pass.name, price: purchase.pass.price },
           transaction: {
             payment_method: purchase.transaction.payment_method,
+            // Read from `amount`, matching the actual column.
             amount_charged: purchase.transaction.amount,
           },
         });
@@ -160,10 +101,6 @@ export async function resolveTransaction(
         await sendConfirmationMail(purchase, invoiceURL);
       }
     } catch (err) {
-      // Covers both invoice generation and mail send failures — neither
-      // should surface as a payment-resolution failure to the caller.
-      // Log and move on; add a retry/queue here later if missed invoices
-      // or confirmation emails become a real problem.
       console.error(`⚠️ Failed to generate invoice / send confirmation mail for transaction ${transactionId}:`, err);
     }
   }
