@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import sendConfirmationMail from '@/lib/mail/mail-sender'; // adjust to actual path
 
 type Resolution = 'SUCCESS' | 'FAILED' | 'REFUNDED';
 
@@ -39,7 +40,7 @@ export async function resolveTransaction(
   gatewayPaymentId: string | null = null,
   paymentMethod: string | null = null // e.g. "upi" | "card" | "netbanking" — only meaningful on SUCCESS
 ): Promise<boolean> {
-  return prisma.$transaction(async (tx) => {
+  const changed = await prisma.$transaction(async (tx) => {
     const fromStatus = ALLOWED_FROM_STATUS[resolution];
 
     // Idempotency guard: only ever transition from the expected starting
@@ -105,4 +106,35 @@ export async function resolveTransaction(
 
     return true;
   });
+
+  // Confirmation email is dispatched OUTSIDE the atomic block, deliberately:
+  // - it's an external network call and has no business holding the DB
+  //   transaction open (or worse, rolling back valid bookkeeping because
+  //   Brevo timed out)
+  // - a failed send shouldn't make resolveTransaction report `false` to
+  //   its callers (webhook handler, sweep cron), since the payment/purchase
+  //   state itself was still resolved correctly
+  if (changed && resolution === 'SUCCESS') {
+    try {
+      const purchase = await prisma.playerPassPurchase.findUnique({
+        where: { transaction_id: transactionId },
+        include: {
+          pass: true,
+          transaction: true,
+          selected_games: { include: { game: true } },
+        },
+      });
+
+      if (purchase) {
+        await sendConfirmationMail(purchase , "https://swipe.pe/view/SLmWJeZCZoMpN");
+      }
+    } catch (err) {
+      // Never let a mail-provider hiccup surface as a payment-resolution
+      // failure to the caller — log and move on. Add a retry/queue here
+      // later if missed confirmation emails become a real problem.
+      console.error(`⚠️ Failed to send confirmation mail for transaction ${transactionId}:`, err);
+    }
+  }
+
+  return changed;
 }
