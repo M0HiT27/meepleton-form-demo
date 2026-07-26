@@ -140,11 +140,13 @@ export async function createDocument(input: CreateDocumentInput): Promise<Create
     // Log the full payload we sent + the full response Swipe gave back —
     // "Validation errors occurred" alone doesn't say which field. Do this
     // here, once, rather than at every call site.
+    if (!res.ok || !body.success) {
     console.error('[swipe] createDocument failed', {
       status: res.status,
-      request: input,
-      response: body,
+      request: JSON.stringify(input, null, 2),
+      response: JSON.stringify(body, null, 2),
     });
+}
   }
   return { ...body, success: res.ok && body.success };
 }

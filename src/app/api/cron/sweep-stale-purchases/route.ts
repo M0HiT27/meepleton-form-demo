@@ -6,7 +6,7 @@ import { verifyRazorpayPayment } from '@/lib/payments/verifyRazorpayPayment';
 // How long a payment can sit PENDING before we consider it stale enough to
 // double-check with the gateway. Keep this comfortably longer than a normal
 // checkout takes, so we're not racing a genuinely slow-but-fine payment.
-const STALE_AFTER_MINUTES = 5;
+const STALE_AFTER_MINUTES = 10;
 
 export async function GET(req: Request) {
   // This route is hit by an external scheduler (cron-job.org / GitHub
