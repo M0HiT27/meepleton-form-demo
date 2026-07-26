@@ -38,7 +38,7 @@ export default async function sendConfirmationMail(data: PurchaseForMail , invoi
       name: process.env.BREVO_SENDER_NAME ?? "Board Game Nights",
       email: senderEmail,
     },
-    templateId: BREVO_TEMPLATE_ID,
+    templateId: Number(BREVO_TEMPLATE_ID),
     to: [{ email: data.email, name: data.name }],
     params: {
       NAME: data.name,
