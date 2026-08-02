@@ -67,6 +67,7 @@ model Pass {
   description              String   @db.Text
   required_selection_count Int // player must choose exactly this many games from the pool
   price                    Int // stored as smallest whole unit deliberately, no decimals
+  template_id              Int? // optional
   start_time               DateTime
   end_time                 DateTime
   created_at               DateTime @default(now())
@@ -75,10 +76,19 @@ model Pass {
   pass_offer_id Int?
   pass_offer    PassOffer? @relation(fields: [pass_offer_id], references: [id], onDelete: SetNull)
 
+  // A pass may optionally come with one kit (e.g. Explorer/BOTC → Regular
+  // kit, League → Premium kit). Nullable because not every pass grants a
+  // kit. Multiple passes can point at the same Kit row, so this is a
+  // plain many-to-one — no join table needed here (unlike Game<->Pass,
+  // which is genuinely many-to-many).
+  kit_id Int?
+  kit    Kit? @relation(fields: [kit_id], references: [id], onDelete: SetNull)
+
   games     GameToPassMapping[]
   purchases PlayerPassPurchase[]
 
   @@index([pass_offer_id])
+  @@index([kit_id])
   @@map("passes")
 }
 
@@ -109,6 +119,51 @@ model GameToPassMapping {
   @@unique([game_id, pass_id]) // prevents mapping the same game to the same pass twice
   @@index([pass_id])
   @@map("game_to_pass_mappings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Kits
+// ─────────────────────────────────────────────────────────────
+
+model Kit {
+  id       Int    @id @default(autoincrement())
+  kit_name String @unique
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  items  KitToKitItemMapping[]
+  passes Pass[]
+
+  @@map("kits")
+}
+
+model KitItem {
+  id        Int    @id @default(autoincrement())
+  item_name String @unique
+
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  kits KitToKitItemMapping[]
+
+  @@map("kit_items")
+}
+
+// Explicit many-to-many join table for Kits and KitItems
+// (an item — e.g. "Tote Bag" — can appear in multiple kits, and a kit
+// can bundle multiple items, matching the Game<->Pass pattern above)
+model KitToKitItemMapping {
+  id          Int @id @default(autoincrement())
+  kit_id      Int
+  kit_item_id Int
+
+  kit  Kit     @relation(fields: [kit_id], references: [id], onDelete: Cascade)
+  item KitItem @relation(fields: [kit_item_id], references: [id], onDelete: Cascade)
+
+  @@unique([kit_id, kit_item_id]) // prevents mapping the same item to the same kit twice
+  @@index([kit_item_id])
+  @@map("kit_to_kit_item_mappings")
 }
 
 // ─────────────────────────────────────────────────────────────

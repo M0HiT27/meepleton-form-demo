@@ -12,7 +12,9 @@ export async function getPassById(idString: string) {
       );
     }
 
-    // Fetch a single pass, including its single optional offer and join-table games
+    // Fetch a single pass, including its single optional offer, join-table
+    // games, and its single optional kit (with the kit's items resolved
+    // through the join table)
     const pass = await prisma.pass.findUnique({
       where: { id: passId },
       include: {
@@ -20,6 +22,15 @@ export async function getPassById(idString: string) {
         games: {
           include: {
             game: true,
+          },
+        },
+        kit: {
+          include: {
+            items: {
+              include: {
+                item: true,
+              },
+            },
           },
         },
       },
@@ -103,6 +114,19 @@ export async function getPassById(idString: string) {
           availableSlots: Math.max(0, max_slots - current_booked_slots),
         };
       }),
+      // A pass may or may not have a kit attached; null when it doesn't.
+      // Flatten the join-table rows into a clean item list, same pattern
+      // as `games` above.
+      kit: pass.kit
+        ? {
+            id: pass.kit.id,
+            name: pass.kit.kit_name,
+            items: pass.kit.items.map((mapping) => ({
+              id: mapping.item.id,
+              name: mapping.item.item_name,
+            })),
+          }
+        : null,
     };
 
     return NextResponse.json({ success: true, data: formattedPass }, { status: 200 });
