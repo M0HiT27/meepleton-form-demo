@@ -20,6 +20,15 @@ export async function getAllPassesWithOffers() {
             game: true,
           },
         },
+        kit: {
+          include: {
+            items: {
+              include: {
+                item: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -84,6 +93,16 @@ export async function getAllPassesWithOffers() {
             availableSlots: Math.max(0, max_slots - current_booked_slots),
           };
         }),
+        kit: pass.kit
+        ? {
+            id: pass.kit.id,
+            name: pass.kit.kit_name,
+            items: pass.kit.items.map((mapping) => ({
+              id: mapping.item.id,
+              name: mapping.item.item_name,
+            })),
+          }
+        : null,
       };
     });
 
