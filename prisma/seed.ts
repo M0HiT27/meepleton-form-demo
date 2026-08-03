@@ -253,7 +253,7 @@ async function main() {
   const botcEarlyBirdOffer = await prisma.passOffer.create({
     data: {
       name: 'Blood on the Clocktower Early Bird',
-      discount_percent: 16.69,
+      discount_percent: 11.1,
       is_active: true,
       start_time: earlyBirdStart,
       end_time: earlyBirdEnd,
@@ -320,7 +320,7 @@ async function main() {
       name: 'Blood on the Clocktower Pass',
       description: 'Full access to a single narrator-led Blood on the Clocktower session.',
       required_selection_count: 1,
-      price: 599,
+      price: 899,
       start_time: earlyBirdStart,
       end_time: earlyBirdEnd,
       pass_offer_id: botcEarlyBirdOffer.id,
