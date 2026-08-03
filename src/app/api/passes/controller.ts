@@ -54,8 +54,10 @@ export async function getAllPassesWithOffers() {
 
       if (isOfferActive && offer) {
         // Compute whole number pricing math safely without decimal fragmentation
-        const { discountedPrice, savings } = computePassPricing(pass, offer, now);
-        finalPrice = discountedPrice;
+        const result = computePassPricing(pass, offer, now);
+
+        finalPrice = result.discountedPrice;
+        savings = result.savings;
       }
 
       return {

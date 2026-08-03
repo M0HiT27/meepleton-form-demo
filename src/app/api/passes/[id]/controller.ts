@@ -67,8 +67,9 @@ export async function getPassById(idString: string) {
 
     if (isOfferActive && offer) {
       // Compute whole number pricing math safely without decimal fragmentation
-      const { discountedPrice, savings } = computePassPricing(pass, offer, now);
-      finalPrice = discountedPrice;
+      const result = computePassPricing(pass, offer, now);
+      finalPrice = result.discountedPrice;
+      savings = result.savings;
     }
 
     // Construct unified payload structure matching your exact output keys
