@@ -306,7 +306,7 @@ async function main() {
     data: {
       name: 'League Pass',
       description: 'Full access to the league stage — select exactly 7 games to compete across.',
-      required_selection_count: 7,
+      required_selection_count: 6,
       price: 1499,
       start_time: earlyBirdStart,
       end_time: earlyBirdEnd,
