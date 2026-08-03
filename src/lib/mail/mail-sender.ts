@@ -11,7 +11,21 @@ type PurchaseForMail = PlayerPassPurchase & {
   transaction: Transaction;
   selected_games: (PlayerPassSelectedGameMapping & { game: Game })[];
 };
-
+/**
+ * Pads a number or string with leading zeros to ensure it is at least `targetLength` digits long.
+ *
+ * @param value - The input number or string to pad.
+ * @param targetLength - Minimum string length (defaults to 4).
+ * @param padChar - Character used for padding (defaults to '0').
+ * @returns The padded string representation.
+ */
+export function padDigits(
+  value: number | string,
+  targetLength: number = 4,
+  padChar: string = '0'
+): string {
+  return String(value).padStart(targetLength, padChar);
+}
 export default async function sendConfirmationMail(data: PurchaseForMail , invoiceUrl : string) {
   const BREVO_API_URL = process.env.BREVO_API_URL || "https://api.brevo.com/v3/smtp/email";
   const BREVO_TEMPLATE_ID = process.env.BREVO_TEMPLATE_ID; // pass_purchase_confirmation
@@ -33,7 +47,7 @@ export default async function sendConfirmationMail(data: PurchaseForMail , invoi
     minute: "2-digit",
     timeZone: "Asia/Kolkata",
   });
-
+  const amountCharged = data.transaction?.amount != null ? data.transaction.amount / 100 : data.pass.price;
   const payload = {
     sender: {
       name: process.env.BREVO_SENDER_NAME ?? "Board Game Nights",
@@ -53,6 +67,11 @@ export default async function sendConfirmationMail(data: PurchaseForMail , invoi
           : data.pass.price
       ),
       INVOICE_URL: invoiceUrl,
+      ORDER_NUMBER: padDigits(data.id),
+      PASS_PRICE : String(data.pass.price),
+      PASS_DISCOUNT : String(data.pass.price - amountCharged),
+      PLAYER_ADDRESS : data.address,
+      PLAYER_CITY : data.city,
       GAMES: data.selected_games.map((sg) => ({ NAME: sg.game.name })),
     },
   };
