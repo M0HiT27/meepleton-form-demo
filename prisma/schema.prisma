@@ -95,7 +95,7 @@ model Pass {
 model PassOffer {
   id               Int      @id @default(autoincrement())
   name             String
-  discount_percent Int // whole number percentage, rounded — e.g. 20 for 20%
+  discount_percent Decimal // whole number percentage, rounded — e.g. 20 for 20%
   is_active        Boolean  @default(true)
   start_time       DateTime
   end_time         DateTime

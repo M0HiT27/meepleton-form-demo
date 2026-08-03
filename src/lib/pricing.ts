@@ -17,7 +17,7 @@ export function computePassPricing(
 
   if (isOfferActive && offer) {
     // Compute whole number pricing math safely without decimal fragmentation
-    savings = Math.round(basePrice * (offer.discount_percent / 100));
+    savings = Math.round(basePrice * (offer.discount_percent.toNumber() / 100));
     discountedPrice = basePrice - savings;
   }
 

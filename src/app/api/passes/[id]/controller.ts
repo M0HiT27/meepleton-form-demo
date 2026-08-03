@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma'; // Aligned with your pooled singleton instance
+import { computePassPricing } from '@/lib/pricing';
 
 export async function getPassById(idString: string) {
   try {
@@ -66,8 +67,8 @@ export async function getPassById(idString: string) {
 
     if (isOfferActive && offer) {
       // Compute whole number pricing math safely without decimal fragmentation
-      savings = Math.round(basePrice * (offer.discount_percent / 100));
-      finalPrice = basePrice - savings;
+      const { discountedPrice, savings } = computePassPricing(pass, offer, now);
+      finalPrice = discountedPrice;
     }
 
     // Construct unified payload structure matching your exact output keys
