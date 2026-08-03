@@ -16,10 +16,22 @@ async function main() {
   await prisma.passOffer.deleteMany({});
   await prisma.game.deleteMany({});
   await prisma.transaction.deleteMany({});
+  // Kit tables — deleted after Pass so the kit_id FK (onDelete: SetNull)
+  // on Pass has nothing left pointing at these rows anyway.
+  await prisma.kitToKitItemMapping.deleteMany({});
+  await prisma.kit.deleteMany({});
+  await prisma.kitItem.deleteMany({});
 
   console.log('🧹 Cleaned up old records.');
 
   // 2. Seed Board Games
+  // Sourced from the updated Game_List_-_games.csv. A few games were
+  // renamed / re-sized by the new list — mapped 1:1 by CSV row position
+  // against the previous seed:
+  //   Trio              -> Sequence (Solo)          (max_slots 40 -> 60)
+  //   Exploding Kittens  -> Exploding Minions         (max_slots 40 -> 60)
+  //   Sequence           -> Next Station : London     (unchanged sizing)
+  //   UNO max_slots 40 -> 60
   console.log('🎲 Seeding board games...');
 
   const uno = await prisma.game.create({
@@ -27,7 +39,7 @@ async function main() {
       name: 'UNO',
       genre: 'Party Game',
       required_players: 10,
-      max_slots: 40,
+      max_slots: 60,
       estimated_runtime_minutes: 30,
       description: 'Match colors and numbers, dodge Draw Fours, and be first to empty your hand.',
     }
@@ -44,31 +56,31 @@ async function main() {
     }
   });
 
-  const trio = await prisma.game.create({
+  const sequenceSolo = await prisma.game.create({
     data: {
-      name: 'Trio',
+      name: 'Sequence (Solo)',
       genre: 'Party Game',
       required_players: 6,
-      max_slots: 40,
+      max_slots: 60,
       estimated_runtime_minutes: 20,
       description: 'Guess the answer before your opponents in this rapid-fire card guessing game.',
     }
   });
 
-  const explodingKittens = await prisma.game.create({
+  const explodingMinions = await prisma.game.create({
     data: {
-      name: 'Exploding Kittens',
+      name: 'Exploding Minions',
       genre: 'Party Game',
       required_players: 5,
-      max_slots: 40,
+      max_slots: 60,
       estimated_runtime_minutes: 15,
       description: 'A card game of chance and strategy — avoid the exploding kitten, or defuse it in time.',
     }
   });
 
-  const sequence = await prisma.game.create({
+  const nextStationLondon = await prisma.game.create({
     data: {
-      name: 'Sequence',
+      name: 'Next Station : London',
       genre: 'Strategy',
       required_players: 12,
       max_slots: 40,
@@ -210,21 +222,71 @@ async function main() {
   });
 
   // 3. Seed Pass Offers (Discounts)
+  // Each pass now gets its own dedicated early-bird offer, all running
+  // through Aug 9 2026 11:59 PM IST (converted to UTC: IST is UTC+5:30,
+  // so 23:59 IST == 18:29 UTC, same calendar date).
   console.log('💸 Seeding pass offers...');
 
-  // Early bird discount: 20% off, active now, runs through Aug 31 2026 12:00 PM IST
-  // (converted to UTC: IST is UTC+5:30, so 12:00 IST == 06:30 UTC)
-  const earlyBirdOffer = await prisma.passOffer.create({
+  const earlyBirdEnd = new Date('2026-08-09T18:29:00Z');
+  const earlyBirdStart = new Date('2026-01-01T00:00:00Z');
+
+  const explorerEarlyBirdOffer = await prisma.passOffer.create({
     data: {
-      name: 'Early Bird 20% Off',
-      discount_percent: 20,
+      name: 'Explorer Early Bird',
+      discount_percent: 25,
       is_active: true,
-      start_time: new Date('2026-01-01T00:00:00Z'),
-      end_time: new Date('2026-08-31T06:30:00Z'),
+      start_time: earlyBirdStart,
+      end_time: earlyBirdEnd,
     },
   });
 
-  // 4. Seed Passes
+  const leagueEarlyBirdOffer = await prisma.passOffer.create({
+    data: {
+      name: 'League Early Bird',
+      discount_percent: 13.34,
+      is_active: true,
+      start_time: earlyBirdStart,
+      end_time: earlyBirdEnd,
+    },
+  });
+
+  const botcEarlyBirdOffer = await prisma.passOffer.create({
+    data: {
+      name: 'Blood on the Clocktower Early Bird',
+      discount_percent: 16.69,
+      is_active: true,
+      start_time: earlyBirdStart,
+      end_time: earlyBirdEnd,
+    },
+  });
+
+  // 4. Seed Kits (must exist before Passes, since Pass.kit_id points at Kit)
+  console.log('🎁 Seeding kits and kit items...');
+
+  const toteBag = await prisma.kitItem.create({ data: { item_name: 'Tote Bag' } });
+  const stickers = await prisma.kitItem.create({ data: { item_name: 'Stickers' } });
+  const leagueShirt = await prisma.kitItem.create({ data: { item_name: 'League Shirt' } });
+  const goodies = await prisma.kitItem.create({ data: { item_name: 'Goodies' } });
+
+  const regularKit = await prisma.kit.create({ data: { kit_name: 'Regular' } });
+  const premiumKit = await prisma.kit.create({ data: { kit_name: 'Premium' } });
+
+  await prisma.kitToKitItemMapping.createMany({
+    data: [
+      // Regular kit: Tote Bag, Stickers — comes with Explorer & BOTC passes
+      { kit_id: regularKit.id, kit_item_id: toteBag.id },
+      { kit_id: regularKit.id, kit_item_id: stickers.id },
+
+      // Premium kit: Tote Bag, Stickers, League Shirt, Goodies — comes with League pass
+      { kit_id: premiumKit.id, kit_item_id: toteBag.id },
+      { kit_id: premiumKit.id, kit_item_id: stickers.id },
+      { kit_id: premiumKit.id, kit_item_id: leagueShirt.id },
+      { kit_id: premiumKit.id, kit_item_id: goodies.id },
+    ],
+  });
+
+  // 5. Seed Passes
+  // Pricing unchanged from the previous seed.
   console.log('🎟️ Seeding board game passes...');
 
   const explorerPass = await prisma.pass.create({
@@ -233,9 +295,10 @@ async function main() {
       description: 'Choose any 1 game from our full lineup — perfect for a single-game deep dive.',
       required_selection_count: 1,
       price: 399,
-      start_time: new Date('2026-01-01T00:00:00Z'),
-      end_time: new Date('2026-08-31T06:30:00Z'),
-      pass_offer_id: earlyBirdOffer.id,
+      start_time: earlyBirdStart,
+      end_time: earlyBirdEnd,
+      pass_offer_id: explorerEarlyBirdOffer.id,
+      kit_id: regularKit.id,
     },
   });
 
@@ -245,32 +308,33 @@ async function main() {
       description: 'Full access to the league stage — select exactly 7 games to compete across.',
       required_selection_count: 7,
       price: 1499,
-      start_time: new Date('2026-01-01T00:00:00Z'),
-      end_time: new Date('2026-08-31T06:30:00Z'),
-      pass_offer_id: earlyBirdOffer.id,
+      start_time: earlyBirdStart,
+      end_time: earlyBirdEnd,
+      pass_offer_id: leagueEarlyBirdOffer.id,
+      kit_id: premiumKit.id,
     },
   });
 
-  // TODO: price/description not provided in the source JSON — placeholder values below.
   const botcPass = await prisma.pass.create({
     data: {
       name: 'Blood on the Clocktower Pass',
-      description: 'Full access to a single narrator-led Blood on the Clocktower session.', // TODO: confirm copy
+      description: 'Full access to a single narrator-led Blood on the Clocktower session.',
       required_selection_count: 1,
-      price: 599, // TODO: confirm real price
-      start_time: new Date('2026-01-01T00:00:00Z'),
-      end_time: new Date('2026-08-31T06:30:00Z'),
-      pass_offer_id: earlyBirdOffer.id,
+      price: 599,
+      start_time: earlyBirdStart,
+      end_time: earlyBirdEnd,
+      pass_offer_id: botcEarlyBirdOffer.id,
+      kit_id: regularKit.id,
     },
   });
 
-  // 5. Connect Games to Passes via the Explicit Join Table
+  // 6. Connect Games to Passes via the Explicit Join Table
   console.log('🔗 Mapping games to passes (Creating pools of choices)...');
 
   // Every game except Blood on the Clocktower is in the Explorer/League pool
   const generalPoolGames = [
-    uno, anomia, trio, explodingKittens, sequence, splendor, azul, catan,
-    cascadia, wingspan, sevenWonders, cryptid, heat, everdell,
+    uno, anomia, sequenceSolo, explodingMinions, nextStationLondon, splendor,
+    azul, catan, cascadia, wingspan, sevenWonders, cryptid, heat, everdell,
     castlesOfBurgundy, brassBirmingham,
   ];
 
