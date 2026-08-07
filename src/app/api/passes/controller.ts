@@ -65,6 +65,7 @@ export async function getAllPassesWithOffers() {
         name: pass.name,
         description: pass.description,
         requiredSelectionCount: pass.required_selection_count,
+        minimumDifficultGamesToSelect: pass.minimum_difficult_games_to_select,
         pricing: {
           basePrice: basePrice,
           discountedPrice: finalPrice,
@@ -83,6 +84,7 @@ export async function getAllPassesWithOffers() {
             id: mapping.game.id,
             name: mapping.game.name,
             genre: mapping.game.genre,
+            difficulty: mapping.game.difficulty,
             requiredPlayers: mapping.game.required_players,
             maxSlots: max_slots,
             estimatedRuntimeMinutes: mapping.game.estimated_runtime_minutes,

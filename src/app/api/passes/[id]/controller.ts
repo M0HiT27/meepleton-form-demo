@@ -78,6 +78,7 @@ export async function getPassById(idString: string) {
       name: pass.name,
       description: pass.description,
       requiredSelectionCount: pass.required_selection_count,
+      minimumDifficultGamesToSelect: pass.minimum_difficult_games_to_select,
       // Unlike the list endpoint (which filters inactive passes out of the
       // result set entirely), a direct by-id fetch can still be hit via a
       // stale/shared/bookmarked link after the pass's window has closed.
@@ -103,6 +104,7 @@ export async function getPassById(idString: string) {
           id: mapping.game.id,
           name: mapping.game.name,
           genre: mapping.game.genre,
+          difficulty: mapping.game.difficulty,
           requiredPlayers: mapping.game.required_players,
           maxSlots: max_slots,
           estimatedRuntimeMinutes: mapping.game.estimated_runtime_minutes,
