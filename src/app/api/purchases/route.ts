@@ -60,6 +60,20 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  if (pass.minimum_difficult_games_to_select > 0) {
+    const selectedDifficultGames = await prisma.game.findMany({
+      where: { id: { in: selected_game_ids }, difficulty: 'HEAVY' },
+    });
+    if (selectedDifficultGames.length < pass.minimum_difficult_games_to_select) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `This pass requires at least ${pass.minimum_difficult_games_to_select} difficult games`,
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   // Every selected game must actually belong to this pass's pool.
   const validGameIds = new Set(pass.games.map((g) => g.game_id));
