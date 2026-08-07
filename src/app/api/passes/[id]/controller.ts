@@ -21,6 +21,11 @@ export async function getPassById(idString: string) {
       include: {
         pass_offer: true,
         games: {
+          orderBy: {
+            game: {
+              difficulty: 'asc',
+            },
+          },
           include: {
             game: true,
           },

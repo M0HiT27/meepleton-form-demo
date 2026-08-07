@@ -17,6 +17,11 @@ export async function getAllPassesWithOffers() {
       include: {
         pass_offer: true,
         games: {
+          orderBy: {
+            game: {
+              difficulty: 'asc',
+            },
+          },
           include: {
             game: true,
           },
