@@ -20,6 +20,12 @@ enum TransactionStatus {
   REFUNDED
 }
 
+enum GameDifficulty {
+  LIGHT
+  MEDIUM
+  HEAVY
+}
+
 // Status of the purchase (business-outcome-facing).
 // Kept separate from TransactionStatus because a purchase can be
 // cancelled/expired for reasons that aren't strictly a payment failure,
@@ -38,22 +44,23 @@ enum PurchaseStatus {
 // ─────────────────────────────────────────────────────────────
 
 model Game {
-  id                        Int      @id @default(autoincrement())
-  name                      String   @unique
+  id                        Int            @id @default(autoincrement())
+  name                      String         @unique
   genre                     String
   required_players          Int
   max_slots                 Int
+  difficulty                GameDifficulty @default(LIGHT)
   // NOTE: this counter must only ever be mutated via atomic conditional
   // SQL (UPDATE ... WHERE current_booked_slots < max_slots), never via
   // read-then-write in application code — see booking flow docs.
   // A CHECK constraint (current_booked_slots <= max_slots) should also
   // be added via raw migration as a DB-level backstop; Prisma schema
   // cannot express CHECK constraints natively.
-  current_booked_slots      Int      @default(0)
+  current_booked_slots      Int            @default(0)
   estimated_runtime_minutes Int
-  description               String   @db.Text
-  created_at                DateTime @default(now())
-  updated_at                DateTime @default(now()) @updatedAt
+  description               String         @db.Text
+  created_at                DateTime       @default(now())
+  updated_at                DateTime       @default(now()) @updatedAt
 
   passes               GameToPassMapping[]
   playerPassSelections PlayerPassSelectedGameMapping[]
@@ -62,16 +69,17 @@ model Game {
 }
 
 model Pass {
-  id                       Int      @id @default(autoincrement())
-  name                     String   @unique
-  description              String   @db.Text
-  required_selection_count Int // player must choose exactly this many games from the pool
-  price                    Int // stored as smallest whole unit deliberately, no decimals
-  template_id              Int? // optional
-  start_time               DateTime
-  end_time                 DateTime
-  created_at               DateTime @default(now())
-  updated_at               DateTime @default(now()) @updatedAt
+  id                                Int      @id @default(autoincrement())
+  name                              String   @unique
+  description                       String   @db.Text
+  required_selection_count          Int // player must choose exactly this many games from the pool
+  minimum_difficult_games_to_select Int      @default(0) // player must choose at least this many "heavy" games from the pool
+  price                             Int // stored as smallest whole unit deliberately, no decimals
+  template_id                       Int? // optional
+  start_time                        DateTime
+  end_time                          DateTime
+  created_at                        DateTime @default(now())
+  updated_at                        DateTime @default(now()) @updatedAt
 
   pass_offer_id Int?
   pass_offer    PassOffer? @relation(fields: [pass_offer_id], references: [id], onDelete: SetNull)

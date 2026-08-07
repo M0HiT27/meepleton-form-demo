@@ -19,11 +19,14 @@ export async function GET(req: Request) {
   }
 
   const staleThreshold = new Date(Date.now() - STALE_AFTER_MINUTES * 60 * 1000);
+  const staleThresholdLeft = new Date(Date.now() - (STALE_AFTER_MINUTES + 30) * 60 * 1000);
 
   const staleTransactions = await prisma.transaction.findMany({
     where: {
-      status: 'PENDING',
-      transaction_time: { lt: staleThreshold },
+      status: {
+        in: ['PENDING', 'FAILED']
+      },
+      transaction_time: { lt: staleThreshold , gt: staleThresholdLeft },
     },
   });
 
