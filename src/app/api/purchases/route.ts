@@ -22,12 +22,13 @@ export async function POST(req: Request) {
   const body = (await req.json()) as ReservationBody;
   const { pass_id, selected_game_ids, buyer } = body;
 
-  if (!pass_id || !Array.isArray(selected_game_ids) || !selected_game_ids.length) {
+  if (!pass_id) {
     return NextResponse.json(
-      { success: false, error: 'pass_id and selected_game_ids are required' },
+      { success: false, error: 'No pass selected' },
       { status: 400 }
     );
   }
+  
   if (!buyer?.name || !buyer?.email || !buyer?.mobile) {
     return NextResponse.json(
       { success: false, error: 'Buyer name, email, and mobile are required' },
@@ -41,9 +42,15 @@ export async function POST(req: Request) {
     where: { id: pass_id },
     include: { pass_offer: true, games: true },
   });
-
+  
   if (!pass) {
     return NextResponse.json({ success: false, error: 'Pass not found' }, { status: 404 });
+  }
+  if (pass.required_selection_count > 0 && (!Array.isArray(selected_game_ids) || !selected_game_ids.length)) {
+    return NextResponse.json(
+      { success: false, error: `Select ${pass.required_selection_count} games` },
+      { status: 400 }
+    );
   }
   if (now < pass.start_time || now > pass.end_time) {
     return NextResponse.json(
@@ -68,7 +75,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: `This pass requires at least ${pass.minimum_difficult_games_to_select} difficult games`,
+          error: `This pass requires at least ${pass.minimum_difficult_games_to_select} heavy games`,
         },
         { status: 400 }
       );
