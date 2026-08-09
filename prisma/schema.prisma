@@ -47,7 +47,7 @@ model Game {
   id                        Int            @id @default(autoincrement())
   name                      String         @unique
   genre                     String
-  required_players          Int
+  required_players          Int?
   max_slots                 Int
   difficulty                GameDifficulty @default(LIGHT)
   // NOTE: this counter must only ever be mutated via atomic conditional
@@ -57,7 +57,7 @@ model Game {
   // be added via raw migration as a DB-level backstop; Prisma schema
   // cannot express CHECK constraints natively.
   current_booked_slots      Int            @default(0)
-  estimated_runtime_minutes Int
+  estimated_runtime_minutes Int?
   description               String         @db.Text
   created_at                DateTime       @default(now())
   updated_at                DateTime       @default(now()) @updatedAt
