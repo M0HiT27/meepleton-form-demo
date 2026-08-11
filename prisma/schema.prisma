@@ -39,6 +39,12 @@ enum PurchaseStatus {
   REFUNDED // payment refunded — slot auto-released, same as FAILED/CANCELLED
 }
 
+model Admin {
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  password String
+}
+
 // ─────────────────────────────────────────────────────────────
 // Catalog
 // ─────────────────────────────────────────────────────────────
