@@ -102,14 +102,14 @@ export async function POST(req: Request) {
   try {
     transactionId = await prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.create({
-        data: { status: 'SUCCESS' }, // payment_method filled in later, from the webhook payload
+        data: { status: 'PENDING' }, // payment_method filled in later, from the webhook payload
       });
 
       const purchase = await tx.playerPassPurchase.create({
         data: {
           pass_id,
           transaction_id: transaction.id,
-          status: 'CONFIRMED',
+          status: 'PENDING',
           name: buyer.name,
           email: buyer.email,
           mobile: buyer.mobile,
@@ -169,11 +169,16 @@ export async function POST(req: Request) {
   }
 
   try {
-    await resolveTransaction(transactionId, 'SUCCESS' , null , "Cash" , discountedPrice * 100);
+    const res = await resolveTransaction(transactionId, 'SUCCESS' , null , "Cash" , discountedPrice * 100);
+    if(!res){
+        throw Error("Pass resolution failed")
+    }
     return NextResponse.json({
       success: true,
       message : "Pass Created",
-      data: null
+      data: {
+        success : true
+      }
     },{status:201});
   } catch (err) {
     console.error('Razorpay order creation failed, releasing reservation:', err);
