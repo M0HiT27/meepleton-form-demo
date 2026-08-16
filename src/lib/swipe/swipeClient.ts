@@ -48,6 +48,7 @@ const RAZORPAY_TO_SWIPE_METHOD: Record<string, SwipePaymentMethod> = {
   upi: 'upi',
   netbanking: 'netBanking',
   emi: 'emi',
+  cash : 'cash'
 };
 
 export function toSwipePaymentMethod(razorpayMethod: string | null | undefined): SwipePaymentMethod {
