@@ -84,6 +84,7 @@ model Pass {
   template_id                       Int? // optional
   start_time                        DateTime
   end_time                          DateTime
+  num_people                        Int      @default(1)
   created_at                        DateTime @default(now())
   updated_at                        DateTime @default(now()) @updatedAt
 
