@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     const pageParam = searchParams.get("page");
     const pageSizeParam = searchParams.get("pageSize");
 
-    const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+    const page = Math.max(1, parseInt(pageParam ?? "1", 50) || 1);
     const pageSize = Math.min(
       MAX_PAGE_SIZE,
       Math.max(1, parseInt(pageSizeParam ?? String(DEFAULT_PAGE_SIZE), 10) || DEFAULT_PAGE_SIZE)
