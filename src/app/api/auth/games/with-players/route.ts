@@ -17,7 +17,7 @@ import convertTimeZone from '@/lib/timezone-converter';
 import { requireAuth } from "@/lib/auth";
 
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 
 interface PlayerDTO {
@@ -60,8 +60,8 @@ export async function GET(request: NextRequest) {
     const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize);
 
     const games = await prisma.game.findMany({
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: 0,
+      take: 100,
       orderBy: { id: "asc" },
       select: {
         id: true,
