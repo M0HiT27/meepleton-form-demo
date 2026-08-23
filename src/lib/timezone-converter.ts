@@ -37,3 +37,38 @@ export default function convertTimeZone(
 
   return { formatted, iso: date.toISOString(), parts };
 }
+/**
+ * Returns true if the ISO datetime string carries an explicit UTC/offset
+ * marker (e.g. "2024-01-01T10:00:00Z" or "...+05:30"). False for naive
+ * strings like "2024-01-01T10:00:00" or "2024-01-01 10:00:00" with no
+ * offset info at all.
+ */
+function hasExplicitOffset(dateTimeInput: string): boolean {
+  return /(Z|[+-]\d{2}:?\d{2})$/.test(dateTimeInput.trim());
+}
+
+/**
+ * Parses a datetime string into a UTC Date for DB storage.
+ *
+ * - If the string has an explicit offset/Z, JS already parses it correctly
+ *   — just use `new Date()` directly.
+ * - If it's naive (no offset), we don't actually know what zone the
+ *   client meant, so rather than silently guessing, this throws — the
+ *   caller must send an unambiguous timestamp.
+ */
+export function toUtcForDb(dateTimeInput: string): Date {
+  const trimmed = dateTimeInput.trim();
+
+  if (!hasExplicitOffset(trimmed)) {
+    throw new Error(
+      `Datetime "${dateTimeInput}" has no timezone offset — send an ISO string with Z or ±HH:mm so it's unambiguous.`
+    );
+  }
+
+  const date = new Date(trimmed);
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid date input: ${dateTimeInput}`);
+  }
+
+  return date; // already the correct UTC instant
+}
