@@ -14,6 +14,9 @@ export async function getAllPassesWithOffers() {
         start_time: { lte: now },
         end_time: { gte: now },
       },
+      orderBy:{
+        name : 'asc'
+      },
       include: {
         pass_offer: true,
         games: {
