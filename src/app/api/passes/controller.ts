@@ -15,7 +15,7 @@ export async function getAllPassesWithOffers() {
         end_time: { gte: now },
       },
       orderBy:{
-        name : 'asc'
+        price : 'asc'
       },
       include: {
         pass_offer: true,
