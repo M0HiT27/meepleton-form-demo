@@ -210,6 +210,7 @@ export async function GET(req: Request) {
     select: {
       id: true,
       name: true,
+      mobile: true,
       status: true,
       purchase_time: true,
       pass: {
@@ -228,6 +229,7 @@ export async function GET(req: Request) {
     purchases: purchases.map((p) => ({
       purchase_id: p.id,
       person_name: p.name,
+      mobile: p.mobile,
       pass_name: p.pass.name,
       pass_id: p.pass.id,
       status: p.status,
