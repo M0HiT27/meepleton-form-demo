@@ -67,6 +67,7 @@ export async function GET() {
       email: purchase.email,
       name: purchase.name,
       pass_name: purchase.pass.name,
+      mobile: purchase.mobile,
     }))
   );
 }
