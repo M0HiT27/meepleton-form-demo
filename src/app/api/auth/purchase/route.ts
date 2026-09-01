@@ -189,3 +189,49 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export async function GET(req: Request) {
+  const auth = await requireAuth();
+  if ('response' in auth) return auth.response;
+  const { searchParams } = new URL(req.url);
+  const email = searchParams.get('email');
+ 
+  if (!email || typeof email !== 'string' || email.trim() === '') {
+    return NextResponse.json({ error: 'email query parameter is required' }, { status: 400 });
+  }
+ 
+  // Normalize the way it's likely stored — trimmed, lowercased — so
+  // "Foo@Bar.com" and "foo@bar.com " both match. Adjust if the write
+  // path normalizes differently.
+  const normalizedEmail = email.trim().toLowerCase();
+ 
+  const purchases = await prisma.playerPassPurchase.findMany({
+    where: { email: { equals: normalizedEmail, mode: 'insensitive' },status: 'CONFIRMED' },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      purchase_time: true,
+      pass: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: { purchase_time: 'desc' },
+  });
+ 
+  return NextResponse.json({
+    email: normalizedEmail,
+    count: purchases.length,
+    purchases: purchases.map((p) => ({
+      purchase_id: p.id,
+      person_name: p.name,
+      pass_name: p.pass.name,
+      pass_id: p.pass.id,
+      status: p.status,
+      purchase_time: p.purchase_time,
+    })),
+  });
+}
